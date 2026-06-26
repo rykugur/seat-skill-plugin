@@ -1,0 +1,66 @@
+# SeAT v5 development stack
+# Source: based on https://github.com/eveseat/docker
+# This file is committed; docker/.env is gitignored (fill in secrets there).
+
+version: "3.8"
+
+services:
+  mariadb:
+    image: mariadb:10.11
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: seat
+      MYSQL_USER: seat
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  seat-web:
+    image: eveseat/seat:5
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - redis
+    environment:
+      DB_HOST: mariadb
+      DB_DATABASE: seat
+      DB_USERNAME: seat
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      APP_KEY: ${APP_KEY}
+      EVE_CLIENT_ID: ${EVE_CLIENT_ID}
+      EVE_CLIENT_SECRET: ${EVE_CLIENT_SECRET}
+      EVE_CLIENT_REFRESH_SCOPES: ${EVE_CLIENT_REFRESH_SCOPES}
+    ports:
+      - "8080:80"
+    volumes:
+      - seat-storage:/var/www/seat/storage
+
+  seat-worker:
+    image: eveseat/seat:5
+    command: php artisan horizon
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - redis
+    environment:
+      DB_HOST: mariadb
+      DB_DATABASE: seat
+      DB_USERNAME: seat
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      APP_KEY: ${APP_KEY}
+      EVE_CLIENT_ID: ${EVE_CLIENT_ID}
+      EVE_CLIENT_SECRET: ${EVE_CLIENT_SECRET}
+      EVE_CLIENT_REFRESH_SCOPES: ${EVE_CLIENT_REFRESH_SCOPES}
+    volumes:
+      - seat-storage:/var/www/seat/storage
+
+volumes:
+  mariadb-data:
+  seat-storage:
