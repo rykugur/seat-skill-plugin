@@ -11,25 +11,18 @@ class SkillNotificationsServiceProvider extends AbstractSeatPlugin
         $this->loadMigrationsFrom(__DIR__ . '/Database/migrations');
         $this->loadTranslationsFrom(__DIR__ . '/resources/lang', 'skillnotify');
 
-        // Register the notification alert into core config.
-        $this->mergeConfigFrom(__DIR__ . '/Config/notifications.alerts.php', 'notifications.alerts');
-
-        // Register the scheduled scan default cadence.
-        $this->registerDatabaseSeeders(Database\Seeders\ScheduleSeeder::class);
+        // Wiring below is added incrementally as each task lands the file/class
+        // it references, so the provider always boots cleanly:
+        //   Task 5: mergeConfigFrom(__DIR__.'/Config/notifications.alerts.php', 'notifications.alerts')
+        //   Task 7: registerDatabaseSeeders(Database\Seeders\ScheduleSeeder::class)
     }
 
     public function register()
     {
-        $this->commands([
-            Console\Scan::class,
-            Console\Seed::class,
-        ]);
-
-        // Default completion handler -> dispatches Discord notifications.
-        $this->app->bind(
-            Services\CompletionHandler::class,
-            Services\NotificationCompletionHandler::class
-        );
+        // Wiring below is added incrementally:
+        //   Task 4: $this->commands([Console\Scan::class]);
+        //           $this->app->bind(Services\CompletionHandler::class, Services\NotificationCompletionHandler::class);
+        //   Task 8: add Console\Seed::class to the commands array.
     }
 
     public function getName(): string
