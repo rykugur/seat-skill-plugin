@@ -37,6 +37,18 @@ These could not be confirmed from here; Task 1 greps them and later tasks adapt 
 
 ---
 
+## Execution Environment (overrides command specifics below)
+
+This plan was drafted assuming a Docker-hosted PHP/Composer. Actual execution uses a **nix devshell**; these rules override any conflicting command text in the tasks:
+
+- **PHP/Composer/PHPUnit run in the devshell.** Prefix every `composer …` / `php …` / `vendor/bin/phpunit …` command with `nix develop --command bash -lc '…'` (or enter the shell once via `direnv allow`). PHP 8.2 + Composer + sqlite are provided; nothing is installed on the host.
+- **`vendor/eveseat/*` source for signature verification is obtained locally** by running `composer require`/`composer install` in the devshell (pulls `eveseat/*` from Packagist). **No live SeAT instance and no EVE credentials are needed for Tasks 1–8.** Grep the resolved `vendor/eveseat/...` paths directly.
+- **`flake.nix`, `.envrc`, `.gitignore` already exist and are committed** — do not recreate them. The `.gitignore` already ignores `/vendor/`, `composer.lock`, `.phpunit*`, `/docker/.env`, and nix artifacts.
+- **The Docker SeAT stack, EVE credentials, and the live end-to-end smoke (Task 8, Step 7) are DEFERRED to the user.** Create the `docker/` compose files as artifacts, but do not bring the stack up and do not require credentials during task execution. The controller runs the live smoke with the user later.
+- **Test DB is SQLite in-memory** via Testbench (already portable; MariaDB remains the production target).
+
+---
+
 ## File Structure
 
 ```
@@ -78,7 +90,7 @@ tests/
 - Create: `src/SkillNotificationsServiceProvider.php`
 
 **Interfaces:**
-- Produces: a loadable SeAT plugin `Fside\SkillNotifications\SkillNotificationsServiceProvider`; a running SeAT v5 with `vendor/eveseat/*` available to grep.
+- Produces: a loadable SeAT plugin `Fside\SkillNotifications\SkillNotificationsServiceProvider`; `vendor/eveseat/*` installed locally (devshell) for grepping; a working `vendor/bin/phpunit`.
 
 - [ ] **Step 1: Get the official SeAT v5 docker stack**
 
@@ -88,9 +100,11 @@ curl -fsSL https://raw.githubusercontent.com/eveseat/docker/master/docker-compos
 curl -fsSL https://raw.githubusercontent.com/eveseat/docker/master/.env.example -o docker/.env
 ```
 
-Edit `docker/.env` and set at minimum: `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD`, `DB_PASSWORD` (same as `MYSQL_PASSWORD`), `APP_KEY` (generate with `echo base64:$(openssl rand -base64 32)`), and your EVE app `EVE_CLIENT_ID` / `EVE_CLIENT_SECRET` / `EVE_CLIENT_REFRESH_SCOPES` (read scopes incl. `esi-skills.read_skills.v1`, `esi-skills.read_skillqueue.v1`). Confirm the DB image is MariaDB.
+Create the files only. **Do not bring the stack up and do not fill in real credentials now** (deferred to the user — see Execution Environment). Leave `docker/.env` with placeholder values; note in it which keys the user must set for a real run: `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD`, `DB_PASSWORD`, `APP_KEY`, and EVE app `EVE_CLIENT_ID` / `EVE_CLIENT_SECRET` / `EVE_CLIENT_REFRESH_SCOPES` (read scopes incl. `esi-skills.read_skills.v1`, `esi-skills.read_skillqueue.v1`). `docker/.env` is gitignored; commit only `docker/docker-compose.yml`.
 
-- [ ] **Step 2: Create `.gitignore`**
+- [ ] **Step 2: `.gitignore` already exists — verify, do not recreate**
+
+`.gitignore` is already committed and covers `/vendor/`, `composer.lock`, `.phpunit*`, `/docker/.env`, and nix artifacts. Confirm it contains these; add any missing entry. Reference of expected contents:
 
 ```gitignore
 /vendor/
@@ -200,42 +214,43 @@ class SkillNotificationsServiceProvider extends AbstractSeatPlugin
 
 > This references classes created in later tasks (`ScheduleSeeder`, `Scan`, `Seed`, `CompletionHandler`, `NotificationCompletionHandler`, the config and lang files). It will not boot cleanly until those exist; that is expected. Do not run SeAT against this provider until Task 8. Tasks 2–8 are developed and tested via Testbench (Step 6) which does not require the full provider to boot.
 
-- [ ] **Step 5: Bring the stack up and verify vendor source is present**
+- [ ] **Step 5: Install dependencies in the devshell and confirm `vendor/eveseat/*` is present**
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d
-docker compose -f docker/docker-compose.yml exec front php artisan --version
-docker compose -f docker/docker-compose.yml exec front ls vendor/eveseat
+nix develop --command bash -lc 'composer install'
+nix develop --command bash -lc 'ls vendor/eveseat && ls vendor/bin/phpunit'
 ```
-Expected: an artisan version string and a directory listing including `services`, `notifications`, `eveapi`.
+Expected: `vendor/eveseat` lists `services`, `notifications`, `eveapi`; `vendor/bin/phpunit` exists.
 
-- [ ] **Step 6: Verify the UNVERIFIED signatures and record them**
+If resolution fails on the `^5.0` / testbench constraints, this is the place to fix them: inspect what `eveseat/eveapi` requires for Laravel (`nix develop --command bash -lc 'composer why-not eveseat/eveapi ^5.0'` or read its `composer.json` from Packagist), align `orchestra/testbench` to that Laravel major (testbench 8 ↔ Laravel 10, testbench 9 ↔ Laravel 11), and record the **resolved** versions in `DEVNOTES.md`.
 
-Run each grep inside the container and write findings into `DEVNOTES.md`:
+- [ ] **Step 6: Verify the UNVERIFIED signatures and record them in `DEVNOTES.md`**
+
+Grep the locally-resolved vendor source:
 
 ```bash
-cd # working dir of the SeAT front container, then:
-grep -n "function " vendor/eveseat/notifications/src/Services/Discord/Messages/DiscordEmbed.php
-grep -rn "dispatchNotifications(" vendor/eveseat/notifications/src vendor/eveseat/eveapi/src
-grep -n "typeName\|type_name\|protected \$table" vendor/eveseat/eveapi/src/Models/Sde/InvType.php
-grep -n "function \|protected \$table\|name" vendor/eveseat/eveapi/src/Models/Character/CharacterInfo.php
+nix develop --command bash -lc 'grep -n "function " vendor/eveseat/notifications/src/Services/Discord/Messages/DiscordEmbed.php'
+nix develop --command bash -lc 'grep -rn "dispatchNotifications(" vendor/eveseat/notifications/src vendor/eveseat/eveapi/src'
+nix develop --command bash -lc 'grep -n "typeName\|type_name\|protected \$table" vendor/eveseat/eveapi/src/Models/Sde/InvType.php'
+nix develop --command bash -lc 'grep -n "function \|protected \$table\|public \$name\|name" vendor/eveseat/eveapi/src/Models/Character/CharacterInfo.php'
 ```
 
-Create `DEVNOTES.md` capturing, verbatim: the real `DiscordEmbed` builder method names/signatures; one real example of how core builds the `$groups` argument and calls `dispatchNotifications`; the `InvType` name column; and how to resolve a character's name + corporation name. **If any differ from this plan's assumptions, note the correct form** — Tasks 5/6 reference `DEVNOTES.md`.
+Create `DEVNOTES.md` capturing, verbatim: the resolved `eveseat/*` + Laravel + testbench versions (from Step 5); the real `DiscordEmbed` builder method names/signatures; one real example of how core builds the `$groups` argument and calls `dispatchNotifications`; the `InvType` name column; and how to resolve a character's name + corporation name. **If any differ from this plan's assumptions, note the correct form** — Tasks 5/6/7 reference `DEVNOTES.md`.
 
-- [ ] **Step 7: Install dev dependencies for the test harness**
+- [ ] **Step 7: Confirm the test runner works**
 
 ```bash
-composer install
+nix develop --command bash -lc 'vendor/bin/phpunit --version'
 ```
-Expected: `vendor/bin/phpunit` exists.
+Expected: a PHPUnit version string. (No tests yet — Task 2 adds the first.)
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add composer.json .gitignore docker/docker-compose.yml src/SkillNotificationsServiceProvider.php DEVNOTES.md
-git commit -m "chore: scaffold package, docker dev stack, and vendor signature notes"
+git add composer.json docker/docker-compose.yml src/SkillNotificationsServiceProvider.php DEVNOTES.md
+git commit -m "chore: scaffold package, docker stack files, and vendor signature notes"
 ```
+(`docker/.env` is gitignored; `.gitignore`/`flake.nix`/`.envrc` are already committed.)
 
 ---
 
@@ -974,9 +989,14 @@ git commit -m "feat: add SkillCompleted Discord notification and alert registrat
 
 Confirm from `DEVNOTES.md`: (a) how core builds the `$groups` argument for `dispatchNotifications` (the query against notification groups subscribed to an alert key); (b) the `InvType` name column; (c) how to resolve character name + corp name from `CharacterInfo`. Adapt `groupsForAlert()` and the resolve helpers below to the real API.
 
-- [ ] **Step 2: Write the failing test**
+- [ ] **Step 2: Write the failing test (real assertions, per the deferred-test decision)**
 
-The default binding (provider) points `CompletionHandler` at `NotificationCompletionHandler`. The test asserts that running a full scan with a real completion enqueues the SeAT notification. We use Laravel's `Notification::fake()` and assert via the dispatch path; if `dispatchNotifications` enqueues jobs rather than using the `Notification` facade directly, assert against `Bus::fake()`/`Queue::fake()` as recorded in `DEVNOTES.md`.
+This test does NOT touch SeAT's notification-group schema or the queue. Instead it overrides the two outward seams — `groupsForAlert()` (the group lookup) and `dispatchNotifications()` (the trait's enqueue method) — in a capturing subclass, so we can assert our own orchestration and field-mapping with real assertions:
+
+- empty groups → `dispatchNotifications` is never called (skip),
+- non-empty groups → exactly one `SkillCompleted` is built per completion, carrying the resolved skill name, the completion's `toLevel`, and the skill points.
+
+The notification's private fields are inspected the same way Task 5 did it (render `populateMessage` into a `DiscordMessage` and assert on its JSON). The implementer seeds whatever minimal stand-in tables `DEVNOTES.md` says `resolveSkillName`/`resolveCharacter` read (e.g. an `invTypes`/`character_infos` stand-in, mirroring the `character_skills` stand-in from Task 4).
 
 `tests/Feature/NotificationDispatchTest.php`:
 
@@ -987,27 +1007,104 @@ namespace Fside\SkillNotifications\Tests\Feature;
 
 use Fside\SkillNotifications\Tests\TestCase;
 use Fside\SkillNotifications\Services\NotificationCompletionHandler;
-use Fside\SkillNotifications\Services\CompletionHandler;
 use Fside\SkillNotifications\Services\Completion;
+use Fside\SkillNotifications\Notifications\Discord\SkillCompleted;
+use Seat\Notifications\Services\Discord\Messages\DiscordMessage;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
+class CapturingHandler extends NotificationCompletionHandler
+{
+    public Collection $fakeGroups;
+    /** @var SkillCompleted[] */
+    public array $built = [];
+
+    protected function groupsForAlert(string $alert)
+    {
+        return $this->fakeGroups;
+    }
+
+    // Override the trait's enqueue: capture the built notification instead of sending.
+    public function dispatchNotifications($alert_type, $groups, $notification_creation_callback)
+    {
+        $this->built[] = $notification_creation_callback(SkillCompleted::class);
+    }
+}
 
 class NotificationDispatchTest extends TestCase
 {
     use \Illuminate\Foundation\Testing\RefreshDatabase;
 
-    public function test_handler_dispatches_without_error_when_no_groups_subscribed(): void
+    protected function setUp(): void
     {
-        // With zero subscribed groups, handle() must be a safe no-op (no exceptions).
-        $handler = $this->app->make(CompletionHandler::class);
-        $this->assertInstanceOf(NotificationCompletionHandler::class, $handler);
+        parent::setUp();
 
-        $handler->handle(90000001, [new Completion(3340, 3, 4)]);
+        // Stand-ins for the SeAT tables the resolvers read. Adjust table/column
+        // names to match DEVNOTES.md (Task 1 findings) if they differ.
+        if (! Schema::hasTable('character_skills')) {
+            Schema::create('character_skills', function ($t) {
+                $t->unsignedBigInteger('character_id');
+                $t->integer('skill_id');
+                $t->unsignedTinyInteger('trained_skill_level');
+                $t->unsignedBigInteger('skillpoints_in_skill')->default(0);
+                $t->primary(['character_id', 'skill_id']);
+            });
+        }
+        if (! Schema::hasTable('invTypes')) {
+            Schema::create('invTypes', function ($t) {
+                $t->integer('typeID')->primary();
+                $t->string('typeName');
+            });
+        }
+        if (! Schema::hasTable('character_infos')) {
+            Schema::create('character_infos', function ($t) {
+                $t->unsignedBigInteger('character_id')->primary();
+                $t->string('name');
+            });
+        }
 
-        $this->assertTrue(true); // reached here without throwing
+        DB::table('character_skills')->insert([
+            'character_id' => 90000001, 'skill_id' => 3340,
+            'trained_skill_level' => 5, 'skillpoints_in_skill' => 256000,
+        ]);
+        DB::table('invTypes')->insert(['typeID' => 3340, 'typeName' => 'Caldari Battleship']);
+        DB::table('character_infos')->insert(['character_id' => 90000001, 'name' => 'Korgoroth']);
+    }
+
+    public function test_no_groups_means_no_dispatch(): void
+    {
+        $handler = new CapturingHandler();
+        $handler->fakeGroups = collect();
+
+        $handler->handle(90000001, [new Completion(3340, 4, 5)]);
+
+        $this->assertSame([], $handler->built);
+    }
+
+    public function test_builds_one_notification_per_completion_with_resolved_fields(): void
+    {
+        $handler = new CapturingHandler();
+        $handler->fakeGroups = collect(['group-1']); // non-empty: any sentinel
+
+        $handler->handle(90000001, [new Completion(3340, 4, 5)]);
+
+        $this->assertCount(1, $handler->built);
+
+        $message = new DiscordMessage();
+        $ref = new \ReflectionMethod($handler->built[0], 'populateMessage');
+        $ref->setAccessible(true);
+        $ref->invoke($handler->built[0], $message, null);
+        $json = json_encode($message);
+
+        $this->assertStringContainsString('Caldari Battleship', $json);
+        $this->assertStringContainsString('Korgoroth', $json);
+        $this->assertStringContainsString('V', $json); // level 5 -> roman V
     }
 }
 ```
 
-> Expand this test once `DEVNOTES.md` confirms the group/dispatch mechanism: seed one notification group subscribed to `fside_skill_completed` with a Discord integration, fake the queue/notification, call `handle()`, and assert exactly one `SkillCompleted` was enqueued with `skillName = 'Caldari Battleship'` and `level = 4`.
+> If `DEVNOTES.md` shows `resolveSkillName`/`resolveCharacter` read different table or column names, change the stand-in `Schema::create` definitions and inserts above to match — the assertions stay the same.
 
 - [ ] **Step 3: Run the test to verify it fails**
 
@@ -1068,8 +1165,9 @@ class NotificationCompletionHandler implements CompletionHandler
     /**
      * Notification groups subscribed to the given alert.
      * CONFIRM the exact model/query against DEVNOTES.md and adapt.
+     * Protected so tests can override it with a fake group collection.
      */
-    private function groupsForAlert(string $alert)
+    protected function groupsForAlert(string $alert)
     {
         return \Seat\Notifications\Models\NotificationGroup::with('integrations')
             ->whereHas('alerts', fn ($q) => $q->where('alert', $alert))
@@ -1367,7 +1465,9 @@ Expected: PASS.
 Run: `vendor/bin/phpunit`
 Expected: all green.
 
-- [ ] **Step 7: End-to-end smoke test on Docker SeAT v5**
+- [ ] **Step 7: End-to-end smoke test on Docker SeAT v5 — DEFERRED to the user**
+
+This step needs a running SeAT v5 instance with EVE credentials, which the user runs (not part of automated task execution). The controller performs it together with the user after Task 8's suite is green. Procedure for that session:
 
 ```bash
 # Install the plugin into the running SeAT via a path repository:
