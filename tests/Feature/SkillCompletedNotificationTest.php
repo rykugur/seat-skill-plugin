@@ -75,5 +75,13 @@ class SkillCompletedNotificationTest extends TestCase
 
         $this->assertArrayHasKey('Level', $embed->fields);
         $this->assertSame('V', $embed->fields['Level']);
+
+        // Field: Corporation
+        $this->assertArrayHasKey('Corporation', $embed->fields);
+        $this->assertSame('Fly Sideways', $embed->fields['Corporation']);
+
+        // Field: Skill Points (formatted with thousands separator)
+        $this->assertArrayHasKey('Skill Points', $embed->fields);
+        $this->assertStringContainsString('256,000', $embed->fields['Skill Points']);
     }
 }

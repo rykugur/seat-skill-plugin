@@ -98,6 +98,6 @@ class NotificationDispatchTest extends TestCase
 
         $this->assertStringContainsString('Caldari Battleship', $json);
         $this->assertStringContainsString('Korgoroth', $json);
-        $this->assertStringContainsString('V', $json); // level 5 -> roman V
+        $this->assertStringContainsString('"Level":"V"', $json); // level 5 -> roman V
     }
 }
