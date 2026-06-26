@@ -11,4 +11,10 @@ abstract class TestCase extends Orchestra
     {
         return [SkillNotificationsServiceProvider::class];
     }
+
+    protected function getEnvironmentSetUp($app)
+    {
+        $app['config']['database.default'] = 'sqlite';
+        $app['config']['database.connections.sqlite.database'] = ':memory:';
+    }
 }
