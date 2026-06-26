@@ -1,0 +1,13 @@
+# PHP / Composer
+/vendor/
+composer.lock
+.phpunit.result.cache
+.phpunit.cache/
+
+# SeAT docker dev stack secrets
+/docker/.env
+
+# Nix / direnv (local dev convenience only)
+.direnv/
+result
+result-*
