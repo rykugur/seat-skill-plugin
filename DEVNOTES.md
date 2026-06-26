@@ -112,9 +112,13 @@ use Seat\Notifications\Models\NotificationGroup;
 use Seat\Notifications\Traits\NotificationDispatchTool;
 
 // In the observer, $groups is built via:
-$groups = NotificationGroup::with('alerts', 'affiliations')
+// NOTE: eager-load 'integrations' and 'mentions' too — mapGroups() (called by
+// dispatchNotifications) accesses $group->integrations and $group->mentions per
+// group, so omitting them causes N+1 queries. (CharacterNotificationObserver /
+// ContractDetailObserver use this fuller with() set.)
+$groups = NotificationGroup::with('alerts', 'affiliations', 'integrations', 'mentions')
     ->whereHas('alerts', function ($query) {
-        $query->where('alert', 'inactive_member');  // <-- use our alert key here
+        $query->where('alert', 'fside_skill_completed');  // <-- our alert key
     })->whereHas('affiliations', function ($query) use ($member) {
         $query->where('affiliation_id', $member->character_id);
         $query->orWhere('affiliation_id', $member->corporation_id);
@@ -126,7 +130,9 @@ $this->dispatchNotifications('inactive_member', $groups, function ($notification
 ```
 
 **For our plugin** we query for groups subscribed to our alert key
-(`'skill_trained'`) and affiliated with the character or their corporation ID.
+(`'fside_skill_completed'`) and affiliated with the character or their corporation ID.
+(Task 6's `handle()` therefore needs the character's `corporation_id` as well as
+the name — resolve it alongside the name in `resolveCharacter`.)
 
 ### NotificationGroup FQCN
 
