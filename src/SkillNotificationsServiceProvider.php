@@ -10,10 +10,10 @@ class SkillNotificationsServiceProvider extends AbstractSeatPlugin
     {
         $this->loadMigrationsFrom(__DIR__ . '/Database/migrations');
         $this->loadTranslationsFrom(__DIR__ . '/resources/lang', 'skillnotify');
+        $this->mergeConfigFrom(__DIR__ . '/Config/notifications.alerts.php', 'notifications.alerts');
 
         // Wiring below is added incrementally as each task lands the file/class
         // it references, so the provider always boots cleanly:
-        //   Task 5: mergeConfigFrom(__DIR__.'/Config/notifications.alerts.php', 'notifications.alerts')
         //   Task 7: registerDatabaseSeeders(Database\Seeders\ScheduleSeeder::class)
     }
 
