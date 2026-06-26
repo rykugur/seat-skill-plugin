@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Fside\SkillNotifications\Models\SkillSnapshot;
 use Fside\SkillNotifications\Services\SkillDiff;
 use Fside\SkillNotifications\Services\CompletionHandler;
+use Fside\SkillNotifications\Services\SnapshotWriter;
 
 class Scan extends Command
 {
@@ -14,7 +15,7 @@ class Scan extends Command
 
     protected $description = 'Detect skill-training completions and notify enabled channels.';
 
-    public function handle(SkillDiff $diff, CompletionHandler $handler): int
+    public function handle(SkillDiff $diff, CompletionHandler $handler, SnapshotWriter $writer): int
     {
         $total = 0;
 
@@ -27,10 +28,10 @@ class Scan extends Command
             ->distinct()
             ->pluck('character_id');
 
-        $characterIds->each(function ($characterId) use ($diff, $handler, &$total) {
+        $characterIds->each(function ($characterId) use ($diff, $handler, $writer, &$total) {
             $characterId = (int) $characterId;
 
-            DB::transaction(function () use ($characterId, $diff, $handler, &$total) {
+            DB::transaction(function () use ($characterId, $diff, $handler, $writer, &$total) {
                 $current = DB::table('character_skills')
                     ->where('character_id', $characterId)
                     ->pluck('trained_skill_level', 'skill_id')
@@ -48,7 +49,7 @@ class Scan extends Command
 
                 // First time we have ever seen this character: baseline silently.
                 if (empty($snapshot)) {
-                    $this->writeSnapshot($characterId, $current);
+                    $writer->write($characterId, $current);
                     return;
                 }
 
@@ -59,32 +60,12 @@ class Scan extends Command
                     $total += count($completions);
                 }
 
-                $this->writeSnapshot($characterId, $current);
+                $writer->write($characterId, $current);
             });
         });
 
         $this->info("skillnotify:scan complete — {$total} completion(s).");
 
         return self::SUCCESS;
-    }
-
-    /**
-     * @param array<int,int> $levels skill_id => trained_skill_level
-     */
-    private function writeSnapshot(int $characterId, array $levels): void
-    {
-        $rows = [];
-        foreach ($levels as $skillId => $level) {
-            $rows[] = [
-                'character_id' => $characterId,
-                'skill_id' => (int) $skillId,
-                'trained_skill_level' => (int) $level,
-                'updated_at' => now(),
-            ];
-        }
-
-        if (! empty($rows)) {
-            SkillSnapshot::upsert($rows, ['character_id', 'skill_id'], ['trained_skill_level', 'updated_at']);
-        }
     }
 }

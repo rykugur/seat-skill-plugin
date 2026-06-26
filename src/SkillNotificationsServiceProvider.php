@@ -17,15 +17,15 @@ class SkillNotificationsServiceProvider extends AbstractSeatPlugin
 
     public function register()
     {
-        $this->commands([\Fside\SkillNotifications\Console\Scan::class]);
+        $this->commands([
+            \Fside\SkillNotifications\Console\Scan::class,
+            \Fside\SkillNotifications\Console\Seed::class,
+        ]);
 
         $this->app->bind(
             \Fside\SkillNotifications\Services\CompletionHandler::class,
             \Fside\SkillNotifications\Services\NotificationCompletionHandler::class
         );
-
-        // Wiring below is added incrementally:
-        //   Task 8: add Console\Seed::class to the commands array.
     }
 
     public function getName(): string
