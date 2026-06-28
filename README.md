@@ -1,95 +1,127 @@
-# SeAT Hangar Tracker (prototype)
+# FSIDE Skill Notifications
 
-A SeAT plugin that tracks corp hangar (asset) deposits/withdrawals and notifies
-Discord, plus skill-queue and skill-plan-milestone notifications for corp
-members.
+A [SeAT](https://eveseat.github.io/docs/) v5 plugin that posts a native Discord
+notification whenever a corporation member finishes training a skill
+(e.g. *"Korgoroth completed Caldari Battleship V"*).
 
-## Architecture
+It reads SeAT's already-synced skill data and delivers through SeAT's built-in
+notification framework, so alerts look and route exactly like SeAT's own
+notifications (the same embed style as the Contract Monitor).
 
-- Built as a real SeAT plugin (Laravel service provider via `AbstractSeatPlugin`),
-  not a standalone app — installed with `composer require` into your SeAT
-  instance and registered in its job scheduler.
-- Reads SeAT's own already-synced data (`corporation_assets`, `character_skillqueue`,
-  `character_skills`) rather than calling ESI directly. SeAT already owns the
-  ESI OAuth/token-refresh/rate-limit lifecycle; duplicating that inside a
-  plugin is extra surface area for very little benefit, since the asset
-  snapshot SeAT stores already carries item-level and division-level detail
-  (`type_id`, `item_id`, `quantity`, `location_flag`).
-- "Deposit/withdrawal" detection works by diffing SeAT's current asset
-  snapshot against our own stored prior snapshot (`hangartracker_asset_snapshots`)
-  per corp hangar division (`location_flag` values `CorpSAG1`..`CorpSAG7`),
-  since ESI/SeAT only exposes a current-state snapshot, not a movement log.
-- Discord delivery goes through a small `DiscordNotifier` service posting to
-  webhook URLs stored encrypted in the database, configurable per-webhook by
-  notification category (hangar movements / skill queue warnings / skill plan
-  milestones), each independently toggleable so you can route different
-  alerts to different channels.
-- All plugin tables are namespaced `hangartracker_*` and avoid foreign keys
-  into SeAT core tables, per SeAT's own package-development guidance to
-  avoid coupling plugin migrations to core migration ordering.
+> **Status:** Phase 1 (skill-completion notifications). Skill plans, milestone
+> alerts, skill-queue warnings, a dashboard, and per-group filtering are planned
+> later phases — see `docs/superpowers/specs/`.
 
-## What's confirmed vs inferred
+## How it works
 
-I verified the plugin skeleton conventions (service provider extending
-`AbstractSeatPlugin`, `loadMigrationsFrom`, schedule registration via
-`AbstractScheduleSeeder`, route naming `seat<plugin>::route.name`, avoiding
-core-table foreign keys, extending `ExtensibleModel`) directly against SeAT's
-package development documentation and development tips page. Those should be
-solid.
+- A scheduled command, `skillnotify:scan`, reads SeAT's `character_skills` and
+  compares each character's `trained_skill_level` against a plugin-owned
+  snapshot table (`skillnotify_skill_snapshots`). Any level increase is a
+  completion.
+- Completions are dispatched as a `SkillCompleted` Discord notification to every
+  SeAT notification group that has the **Skill Completed** alert enabled.
+- **First run is silent.** The first time a character is seen, its current
+  skills are recorded as a baseline with no notifications — so installing the
+  plugin (or a member joining later) never floods you with their whole history.
+- It never calls ESI directly; SeAT already owns the ESI/token lifecycle.
 
-I was **not** able to verify the exact class/column names inside
-`eveseat/eveapi` and `eveseat/services` against live source in this session
-(no PHP available in my sandbox, and I didn't have direct repo browsing
-access to the specific files). Several names in this skeleton are
-educated-guess placeholders based on the public ESI schema and common SeAT
-naming conventions, not confirmed reads of the real code. **Before running
-any of this against a real SeAT instance, check these against your actual
-installed version** (`vendor/eveseat/eveapi/src/Models/...`):
+## Requirements
 
-- `Seat\Eveapi\Models\Assets\CorporationAsset` — model/table name and whether
-  `location_flag` is stored as a string enum (`CorpSAG1`) or already mapped
-  to an integer division.
-- `Seat\Eveapi\Models\Character\CharacterSkillQueue` — model name and the
-  `finish_date` column name for in-progress skill queue entries.
-- `Seat\Eveapi\Models\Character\CharacterSkill` — model name and whether the
-  trained-level column is `trained_skill_level` or something else.
-- `Seat\Eveapi\Models\Sde\InvType` — the SDE-backed type-name lookup model
-  and whether the name column is `typeName` or `type_name`.
-- `AbstractSeatPlugin`'s actual abstract method names (`getName`,
-  `getPackageRepositoryUrl`, `getPackageName` here are inferred from the
-  general pattern, not confirmed against the real abstract class signature).
-- The Blade layout `web::layouts.grids.12` used in the three views — check
-  `eveseat/web`'s actual grid view names for your installed version.
+- SeAT **v5** (the plugin targets `eveseat/services`, `eveseat/notifications`,
+  `eveseat/eveapi` `^5.0`)
+- **MariaDB** (SeAT's only officially supported database)
+- PHP 8.1+
 
-None of this is exotic to fix — it's a few `grep -r` passes through
-`vendor/eveseat/eveapi/src/Models` and `vendor/eveseat/services/src` to swap
-in the real names — but it does mean this skeleton will not run unmodified.
-Treat it as a structurally-correct first draft, not a tested package.
+## Installation
 
-## Setup (once verified against your SeAT version)
+Install into your SeAT instance with Composer, then migrate and clear caches.
+
+For local/path-based installs, register this directory as a path repository:
 
 ```bash
-composer require yourcorp/seat-hangar-tracker:@dev
+composer config repositories.skillnotify path /path/to/seat-skill-plugin
+composer require fside/seat-skill-notifications:@dev
 php artisan migrate
-php artisan db:seed --class=Seat\\Services\\Database\\Seeders\\PluginDatabaseSeeder
 php artisan config:clear && php artisan view:clear
 ```
 
-Then visit Settings → Hangar Tracker (or the sidebar entry) to add a Discord
-webhook, and grant the `hangartracker.view` / `hangartracker.settings`
-permissions via SeAT's Access Management to the roles that should see it.
+(When running the official SeAT Docker stack, prefix the above with
+`docker compose exec seat-web …`.)
 
-## What's intentionally out of scope for this prototype
+### Seed a baseline before enabling Discord (recommended)
 
-- No UI yet for creating/editing skill plans (only assigning + viewing is
-  wired up) — plans currently need to be seeded via tinker or a future admin
-  form.
-- No backfill command for the first asset-diff run; the first run after
-  install will treat all current hangar contents as "deposits" since there's
-  no prior snapshot to diff against. You may want to seed
-  `hangartracker_asset_snapshots` from the current `corporation_assets` state
-  once, silently, before turning on Discord notifications.
-- No rate limiting on Discord webhook delivery beyond Discord's own; if a lot
-  of items move at once you may hit Discord's per-webhook rate limit. Worth
-  batching multiple movements from one diff run into a single embed if this
-  becomes noisy in practice.
+To be certain no historical skills are announced when you first turn on a
+channel, baseline every character once before enabling any notification group:
+
+```bash
+php artisan skillnotify:seed
+```
+
+`skillnotify:scan` also baselines new characters silently on their first run, so
+this step is belt-and-suspenders.
+
+## Configuring Discord notifications
+
+This plugin registers a notification alert; routing is done the SeAT-native way:
+
+1. In SeAT, go to **Settings → Notifications** and create (or pick) a
+   notification group.
+2. Add a **Discord** integration (webhook) to that group.
+3. Enable the **Skill Completed** alert on the group.
+
+Every member's skill completions will be delivered to that group's Discord
+channel. (Add multiple groups to route to different channels.)
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `skillnotify:scan` | Detect completions since the last run and notify enabled groups. Registered to run every 15 minutes by default. |
+| `skillnotify:seed` | Baseline all characters' snapshots without sending notifications (install-time backfill). |
+
+The scan schedule (`*/15 * * * *`) is seeded as a default into SeAT's schedule
+table and can be changed from SeAT's schedule-management UI without code
+changes.
+
+## Development
+
+Nix is an optional convenience (it is **not** required — production runs on
+Ubuntu with the SeAT stack's PHP/Composer). A flake devshell pins PHP 8.2 +
+Composer with the extensions needed for the test suite:
+
+```bash
+nix develop            # or `direnv allow` once, then auto-enter
+composer install
+vendor/bin/phpunit     # 16 tests, all green
+```
+
+Without Nix, any PHP 8.1+ with Composer works: `composer install && vendor/bin/phpunit`.
+
+Tests run on in-memory SQLite via Orchestra Testbench; MariaDB remains the
+production target. `DEVNOTES.md` records the verified SeAT v5 class/column
+signatures the plugin depends on.
+
+A sample SeAT v5 Docker stack for local testing lives in `docker/`
+(fill in `docker/.env` with your DB passwords, `APP_KEY`, and EVE app
+credentials before bringing it up).
+
+## Project layout
+
+```
+src/
+  SkillNotificationsServiceProvider.php   plugin registration
+  Console/Scan.php, Seed.php              the two artisan commands
+  Services/SkillDiff.php                  pure completion-detection
+  Services/CompletionHandler.php          detection→dispatch seam (interface)
+  Services/NotificationCompletionHandler.php  dispatch to notification groups
+  Services/SnapshotWriter.php             snapshot upsert
+  Models/SkillSnapshot.php                skillnotify_skill_snapshots
+  Notifications/Discord/SkillCompleted.php  the Discord embed
+  Config/notifications.alerts.php         registers the fside_skill_completed alert
+  Database/Seeders/ScheduleSeeder.php     default 15-minute schedule
+docs/superpowers/                         design spec + implementation plan
+```
+
+## License
+
+GPL-2.0-only
