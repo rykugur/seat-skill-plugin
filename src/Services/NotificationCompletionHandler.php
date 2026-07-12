@@ -15,13 +15,13 @@ class NotificationCompletionHandler implements CompletionHandler
 
     public function handle(int $characterId, array $completions): void
     {
-        $groups = $this->groupsForAlert(self::ALERT);
+        [$characterName, $corporationName, $corporationId] = $this->resolveCharacter($characterId);
+
+        $groups = $this->groupsForAlert(self::ALERT, $characterId, $corporationId);
 
         if ($groups->isEmpty()) {
             return;
         }
-
-        [$characterName, $corporationName] = $this->resolveCharacter($characterId);
 
         foreach ($completions as $completion) {
             $skillName = $this->resolveSkillName($completion->skillId);
@@ -48,10 +48,17 @@ class NotificationCompletionHandler implements CompletionHandler
      * Return notification groups subscribed to the given alert key.
      * Protected so tests can override with a fake collection.
      */
-    protected function groupsForAlert(string $alert)
+    protected function groupsForAlert(string $alert, int $characterId, ?int $corporationId)
     {
-        return \Seat\Notifications\Models\NotificationGroup::with('alerts', 'integrations', 'mentions')
+        return \Seat\Notifications\Models\NotificationGroup::with('alerts', 'affiliations', 'integrations', 'mentions')
             ->whereHas('alerts', fn ($q) => $q->where('alert', $alert))
+            ->whereHas('affiliations', function ($q) use ($characterId, $corporationId) {
+                $q->where('affiliation_id', $characterId);
+
+                if ($corporationId !== null) {
+                    $q->orWhere('affiliation_id', $corporationId);
+                }
+            })
             ->get();
     }
 
@@ -68,13 +75,14 @@ class NotificationCompletionHandler implements CompletionHandler
      * Resolve character name and corporation name for the given character ID.
      * Never throws — corporation name is best-effort and may be null.
      *
-     * @return array{0: string, 1: ?string}
+     * @return array{0: string, 1: ?string, 2: ?int}
      */
     protected function resolveCharacter(int $characterId): array
     {
         $info = CharacterInfo::find($characterId);
 
         $characterName = $info->name ?? "Character {$characterId}";
+        $corporationId = isset($info->corporation_id) ? (int) $info->corporation_id : null;
 
         // Corporation name requires CharacterAffiliation -> UniverseName chain which
         // may be absent in test/minimal environments.  Wrap in rescue() so any missing
@@ -85,6 +93,6 @@ class NotificationCompletionHandler implements CompletionHandler
             false // don't report to exception handler
         );
 
-        return [$characterName, $corporationName];
+        return [$characterName, $corporationName, $corporationId];
     }
 }

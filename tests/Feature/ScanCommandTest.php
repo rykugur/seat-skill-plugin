@@ -20,6 +20,23 @@ class RecordingHandler implements CompletionHandler
     }
 }
 
+class FailingOnceHandler implements CompletionHandler
+{
+    /** @var array<int,Completion[]> */
+    public array $calls = [];
+    public int $failuresRemaining = 1;
+
+    public function handle(int $characterId, array $completions): void
+    {
+        $this->calls[$characterId][] = $completions[0];
+
+        if ($this->failuresRemaining > 0) {
+            $this->failuresRemaining--;
+            throw new \RuntimeException('simulated notification failure');
+        }
+    }
+}
+
 class ScanCommandTest extends TestCase
 {
     use \Illuminate\Foundation\Testing\RefreshDatabase;
@@ -88,5 +105,33 @@ class ScanCommandTest extends TestCase
         $this->artisan('skillnotify:scan')->assertExitCode(0);
 
         $this->assertSame([], $this->handler->calls);
+    }
+
+    public function test_notification_failure_keeps_snapshot_advanced_and_retries_pending_completion(): void
+    {
+        $this->setSkill(90000001, 3340, 3);
+        $this->artisan('skillnotify:scan'); // baseline
+
+        $handler = new FailingOnceHandler();
+        $this->app->instance(CompletionHandler::class, $handler);
+
+        $this->setSkill(90000001, 3340, 4);
+
+        try {
+            $this->artisan('skillnotify:scan');
+            $this->fail('Expected the first notification attempt to fail.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('simulated notification failure', $e->getMessage());
+        }
+
+        $this->assertEquals(
+            4,
+            SkillSnapshot::where('character_id', 90000001)->where('skill_id', 3340)->value('trained_skill_level')
+        );
+
+        $this->artisan('skillnotify:scan')->assertExitCode(0);
+
+        $this->assertCount(2, $handler->calls[90000001]);
+        $this->assertSame(4, $handler->calls[90000001][1]->toLevel);
     }
 }
