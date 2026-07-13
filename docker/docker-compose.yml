@@ -32,11 +32,12 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: redis
       APP_KEY: ${APP_KEY}
+      APP_URL: http://localhost:8080
       EVE_CLIENT_ID: ${EVE_CLIENT_ID}
       EVE_CLIENT_SECRET: ${EVE_CLIENT_SECRET}
       EVE_CLIENT_REFRESH_SCOPES: ${EVE_CLIENT_REFRESH_SCOPES}
     ports:
-      - "8080:80"
+      - "8080:8080"
     volumes:
       - seat-storage:/var/www/seat/storage
       - ../:/var/www/seat/packages/seat-skill-plugin
@@ -55,6 +56,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: redis
       APP_KEY: ${APP_KEY}
+      APP_URL: http://localhost:8080
       EVE_CLIENT_ID: ${EVE_CLIENT_ID}
       EVE_CLIENT_SECRET: ${EVE_CLIENT_SECRET}
       EVE_CLIENT_REFRESH_SCOPES: ${EVE_CLIENT_REFRESH_SCOPES}
