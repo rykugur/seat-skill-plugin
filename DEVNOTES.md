@@ -189,6 +189,7 @@ protected $primaryKey = 'typeID';        // primary key column
 
 File: `vendor/eveseat/eveapi/src/Models/Character/CharacterInfo.php`
 Migration: `vendor/eveseat/eveapi/src/database/migrations/2018_01_03_171826_create_character_infos_table.php`
+and later `2019_11_26_214025_drop_corporation_id_from_character_infos_table.php`
 
 ### Character name
 
@@ -196,12 +197,15 @@ The `character_infos` table has a `name` column directly:
 
 ```sql
 $table->string('name');        -- character name, stored directly on the row
-$table->bigInteger('corporation_id');  -- FK to corporation
 ```
 
 Access: `$characterInfo->name`
 
-### Corporation name
+Current SeAT v5 no longer has `character_infos.corporation_id`; that column is
+removed by a later migration. Use `CharacterInfo::affiliation` to reach the
+current corporation ID.
+
+### Corporation ID and name
 
 `CharacterInfo` does NOT have a direct `corporation` relation that returns a
 corporation name string. The corporation name comes via `CharacterAffiliation`
@@ -229,6 +233,9 @@ public function corporationInfo()
 **Pattern for getting corporation name in our plugin:**
 
 ```php
+// Corporation ID for notification-group affiliation matching:
+$characterInfo->affiliation->corporation_id
+
 // Option A — via CharacterInfo's affiliation relation:
 $characterInfo->affiliation->corporation->name
 // (affiliation is a hasOne(CharacterAffiliation::class) with withDefault())
@@ -236,8 +243,8 @@ $characterInfo->affiliation->corporation->name
 // Option B — via CorporationInfo (has a 'name' column directly):
 $characterInfo->affiliation->corporationInfo->name
 
-// Option C — direct lookup from corporation_id:
-\Seat\Eveapi\Models\Universe\UniverseName::where('entity_id', $characterInfo->corporation_id)->value('name')
+// Option C — direct lookup from the affiliation's corporation_id:
+\Seat\Eveapi\Models\Universe\UniverseName::where('entity_id', $characterInfo->affiliation->corporation_id)->value('name')
 ```
 
 `CorporationInfo` has `name` as a direct column (OA annotation confirms:

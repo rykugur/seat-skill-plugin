@@ -72,6 +72,11 @@ class NotificationDispatchTest extends TestCase
             Schema::create('character_infos', function ($t) {
                 $t->unsignedBigInteger('character_id')->primary();
                 $t->string('name');
+            });
+        }
+        if (! Schema::hasTable('character_affiliations')) {
+            Schema::create('character_affiliations', function ($t) {
+                $t->unsignedBigInteger('character_id')->primary();
                 $t->unsignedBigInteger('corporation_id')->nullable();
             });
         }
@@ -127,7 +132,8 @@ class NotificationDispatchTest extends TestCase
         }
 
         DB::table('invTypes')->insert(['typeID' => 3340, 'typeName' => 'Caldari Battleship']);
-        DB::table('character_infos')->insert(['character_id' => 90000001, 'name' => 'Korgoroth', 'corporation_id' => 98000001]);
+        DB::table('character_infos')->insert(['character_id' => 90000001, 'name' => 'Korgoroth']);
+        DB::table('character_affiliations')->insert(['character_id' => 90000001, 'corporation_id' => 98000001]);
         DB::table('character_skills')->insert([
             'character_id' => 90000001,
             'skill_id' => 3340,

@@ -2,8 +2,6 @@
 # Source: based on https://github.com/eveseat/docker
 # This file is committed; docker/.env is gitignored (fill in secrets there).
 
-version: "3.8"
-
 services:
   mariadb:
     image: mariadb:10.11
@@ -22,6 +20,7 @@ services:
 
   seat-web:
     image: eveseat/seat:5
+    command: web
     restart: unless-stopped
     depends_on:
       - mariadb
@@ -40,10 +39,11 @@ services:
       - "8080:80"
     volumes:
       - seat-storage:/var/www/seat/storage
+      - ../:/var/www/seat/packages/seat-skill-plugin
 
   seat-worker:
     image: eveseat/seat:5
-    command: php artisan horizon
+    command: worker
     restart: unless-stopped
     depends_on:
       - mariadb
@@ -60,6 +60,7 @@ services:
       EVE_CLIENT_REFRESH_SCOPES: ${EVE_CLIENT_REFRESH_SCOPES}
     volumes:
       - seat-storage:/var/www/seat/storage
+      - ../:/var/www/seat/packages/seat-skill-plugin
 
 volumes:
   mariadb-data:

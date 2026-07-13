@@ -82,7 +82,11 @@ class NotificationCompletionHandler implements CompletionHandler
         $info = CharacterInfo::find($characterId);
 
         $characterName = $info->name ?? "Character {$characterId}";
-        $corporationId = isset($info->corporation_id) ? (int) $info->corporation_id : null;
+        $corporationId = rescue(
+            fn () => isset($info?->affiliation?->corporation_id) ? (int) $info->affiliation->corporation_id : null,
+            null,
+            false
+        );
 
         // Corporation name requires CharacterAffiliation -> UniverseName chain which
         // may be absent in test/minimal environments.  Wrap in rescue() so any missing
