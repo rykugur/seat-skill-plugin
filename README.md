@@ -8,9 +8,9 @@ It reads SeAT's already-synced skill data and delivers through SeAT's built-in
 notification framework, so alerts look and route exactly like SeAT's own
 notifications (the same embed style as the Contract Monitor).
 
-> **Status:** Phase 1 (skill-completion notifications). Skill plans, milestone
-> alerts, skill-queue warnings, a dashboard, and per-group filtering are planned
-> later phases — see `docs/superpowers/specs/`.
+> **Status:** Phase 1 is implemented and smoke-tested against a local SeAT v5
+> Docker instance. Skill plans, milestone alerts, skill-queue warnings, and a
+> dashboard are planned later phases - see `docs/superpowers/specs/`.
 
 ## How it works
 
@@ -18,10 +18,12 @@ notifications (the same embed style as the Contract Monitor).
   compares each character's `trained_skill_level` against a plugin-owned
   snapshot table (`skillnotify_skill_snapshots`). Any level increase is a
   completion.
-- Completions are dispatched as a `SkillCompleted` Discord notification to every
-  SeAT notification group that has the **Skill Completed** alert enabled.
+- Completions are recorded in `skillnotify_skill_completions`, then dispatched
+  as `SkillCompleted` Discord notifications to SeAT notification groups that
+  have the **Skill Completed** alert enabled and whose affiliations match the
+  character or their corporation.
 - **First run is silent.** The first time a character is seen, its current
-  skills are recorded as a baseline with no notifications — so installing the
+  skills are recorded as a baseline with no notifications - so installing the
   plugin (or a member joining later) never floods you with their whole history.
 - It never calls ESI directly; SeAT already owns the ESI/token lifecycle.
 
@@ -34,19 +36,37 @@ notifications (the same embed style as the Contract Monitor).
 
 ## Installation
 
-Install into your SeAT instance with Composer, then migrate and clear caches.
+Install into your SeAT instance with Composer, then migrate, clear caches, and
+restart queue workers.
+
+Until the package is published to Packagist, install it as a Composer VCS
+repository from GitHub:
+
+```bash
+cd /path/to/seat
+composer config repositories.skillnotify vcs git@github.com:rykugur/seat-skill-plugin.git
+composer require fside/seat-skill-notifications:dev-master
+php artisan migrate --force
+php artisan optimize:clear
+php artisan skillnotify:seed
+```
+
+Restart SeAT workers after installing or updating the plugin so queued
+notifications can unserialize the plugin classes.
 
 For local/path-based installs, register this directory as a path repository:
 
 ```bash
 composer config repositories.skillnotify path /path/to/seat-skill-plugin
 composer require fside/seat-skill-notifications:@dev
-php artisan migrate
-php artisan config:clear && php artisan view:clear
+php artisan migrate --force
+php artisan optimize:clear
+php artisan skillnotify:seed
 ```
 
 (When running the official SeAT Docker stack, prefix the above with
-`docker compose exec seat-web …`.)
+`docker compose exec seat-web ...`, and restart the worker container afterward,
+for example `docker compose restart seat-worker`.)
 
 ### Seed a baseline before enabling Discord (recommended)
 
@@ -64,13 +84,35 @@ this step is belt-and-suspenders.
 
 This plugin registers a notification alert; routing is done the SeAT-native way:
 
-1. In SeAT, go to **Settings → Notifications** and create (or pick) a
-   notification group.
-2. Add a **Discord** integration (webhook) to that group.
-3. Enable the **Skill Completed** alert on the group.
+1. In SeAT, open **Notifications**. If it is not visible in the sidebar, use
+   `/notifications/groups` directly and confirm your user has notification setup
+   permissions.
+2. Create (or pick) a notification group.
+3. Add at least one affiliation to the group. SeAT notification groups only
+   receive matching events; add the test character, the corporation, or the
+   relevant real corporation.
+4. Add a **Discord** integration (webhook) to that group.
+5. Enable the **Skill Completed** alert on the group.
 
 Every member's skill completions will be delivered to that group's Discord
 channel. (Add multiple groups to route to different channels.)
+
+## Verified local smoke test
+
+The current implementation was tested against the local SeAT v5 Docker stack
+using a synthetic character:
+
+- Character: `90000001` (`Skill Notify Smoke`)
+- Corporation: `98000001`
+- Skill: `3340` (`Caldari Battleship`)
+- Flow: baseline at level IV, bump to level V, run `skillnotify:scan`
+- Result: `skillnotify:scan` reported one completion; the queued
+  `Fside\SkillNotifications\Notifications\Discord\SkillCompleted` worker job
+  completed and Discord received the notification.
+
+When installing a plugin into an already-running worker, restart the worker
+before relying on queued delivery. Otherwise old worker processes may not have
+the plugin class in their autoloader yet.
 
 ## Commands
 
@@ -85,7 +127,7 @@ changes.
 
 ## Development
 
-Nix is an optional convenience (it is **not** required — production runs on
+Nix is an optional convenience (it is **not** required - production runs on
 Ubuntu with the SeAT stack's PHP/Composer). A flake devshell pins PHP 8.2 +
 Composer with the extensions needed for the test suite:
 
@@ -118,7 +160,7 @@ src/
   SkillNotificationsServiceProvider.php   plugin registration
   Console/Scan.php, Seed.php              the two artisan commands
   Services/SkillDiff.php                  pure completion-detection
-  Services/CompletionHandler.php          detection→dispatch seam (interface)
+  Services/CompletionHandler.php          detection-to-dispatch interface
   Services/NotificationCompletionHandler.php  dispatch to notification groups
   Services/SnapshotWriter.php             snapshot upsert
   Models/SkillSnapshot.php                skillnotify_skill_snapshots
@@ -126,6 +168,7 @@ src/
   Config/notifications.alerts.php         registers the fside_skill_completed alert
   Database/Seeders/ScheduleSeeder.php     default 15-minute schedule
 docs/superpowers/                         design spec + implementation plan
+docs/wiki/                                maintained project wiki
 ```
 
 ## License
