@@ -105,6 +105,12 @@ A sample SeAT v5 Docker stack for local testing lives in `docker/`
 (fill in `docker/.env` with your DB passwords, `APP_KEY`, and EVE app
 credentials before bringing it up).
 
+The dev compose file persists `/var/www/seat` in a named `seat-app` volume so
+Composer-installed packages survive container recreation. A normal
+`docker compose stop` / `docker compose start` keeps the same containers too.
+Running `docker compose down -v` intentionally deletes the named volumes, so
+after that you must reinstall this package with the Composer commands above.
+
 ## Project layout
 
 ```

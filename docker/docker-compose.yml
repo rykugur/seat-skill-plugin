@@ -35,10 +35,12 @@ services:
       APP_URL: http://localhost:8080
       EVE_CLIENT_ID: ${EVE_CLIENT_ID}
       EVE_CLIENT_SECRET: ${EVE_CLIENT_SECRET}
+      EVE_CALLBACK_URL: ${EVE_CALLBACK_URL}
       EVE_CLIENT_REFRESH_SCOPES: ${EVE_CLIENT_REFRESH_SCOPES}
     ports:
       - "8080:8080"
     volumes:
+      - seat-app:/var/www/seat
       - seat-storage:/var/www/seat/storage
       - ../:/var/www/seat/packages/seat-skill-plugin
 
@@ -61,9 +63,11 @@ services:
       EVE_CLIENT_SECRET: ${EVE_CLIENT_SECRET}
       EVE_CLIENT_REFRESH_SCOPES: ${EVE_CLIENT_REFRESH_SCOPES}
     volumes:
+      - seat-app:/var/www/seat
       - seat-storage:/var/www/seat/storage
       - ../:/var/www/seat/packages/seat-skill-plugin
 
 volumes:
   mariadb-data:
+  seat-app:
   seat-storage:
